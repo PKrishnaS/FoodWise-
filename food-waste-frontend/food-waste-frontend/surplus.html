@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FoodWise — Surplus Food</title>
+<link rel="stylesheet" href="shared.css"/>
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+
+<div class="main">
+  <div class="page-header">
+    <h1>Surplus Food</h1>
+    <p>Share excess food with NGOs instead of wasting it</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:400px 1fr;gap:28px;align-items:start">
+
+    <!-- Add Surplus Form -->
+    <div class="card">
+      <div class="section-head"><h2>Add Surplus Food</h2></div>
+      <div id="alertBox" class="alert" style="display:none"></div>
+
+      <div class="form-field">
+        <label>Food Item</label>
+        <input type="text" id="item" placeholder="e.g. Rice, Bread"/>
+      </div>
+      <div class="form-field">
+        <label>Quantity Available (kg)</label>
+        <input type="number" id="quantity" min="1" placeholder="0"/>
+      </div>
+      <div class="form-field">
+        <label>Date</label>
+        <input type="date" id="date"/>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="addSurplus()">Add to Surplus</button>
+    </div>
+
+    <!-- Surplus List -->
+    <div class="card">
+      <div class="section-head">
+        <h2>Available Surplus</h2>
+        <button class="btn btn-outline" onclick="loadSurplus()">Refresh</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Quantity</th><th>Date</th><th>Status</th><th>NGO</th><th>Action</th></tr>
+        </thead>
+        <tbody id="surplusTable">
+          <tr><td colspan="6" style="text-align:center;color:#7a8c82;padding:20px">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- Request Modal -->
+<div id="modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:999;display:none;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;padding:32px;width:400px">
+    <h3 style="font-family:'Syne',sans-serif;margin-bottom:16px">Request Pickup</h3>
+    <div class="form-field">
+      <label>NGO Name</label>
+      <input type="text" id="ngoName" placeholder="Your NGO name"/>
+    </div>
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <button class="btn btn-primary" style="flex:1" onclick="submitRequest()">Request</button>
+      <button class="btn btn-outline" style="flex:1" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+  renderSidebar("surplus");
+  document.getElementById("date").value = new Date().toISOString().split("T")[0];
+
+  let selectedId = null;
+
+  async function addSurplus() {
+    const item     = document.getElementById("item").value.trim();
+    const quantity = document.getElementById("quantity").value;
+    const date     = document.getElementById("date").value;
+
+    if (!item || !quantity || !date) return showAlert("alertBox", "All fields required.", "error");
+
+    try {
+      const res  = await fetch(`${API}/surplus/add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item, quantity: parseInt(quantity), date })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert("alertBox", "Surplus food added!", "success");
+        document.getElementById("item").value     = "";
+        document.getElementById("quantity").value = "";
+        loadSurplus();
+      } else {
+        showAlert("alertBox", data.message, "error");
+      }
+    } catch (e) { showAlert("alertBox", "Server error.", "error"); }
+  }
+
+  async function loadSurplus() {
+    try {
+      const res  = await fetch(`${API}/surplus/all`);
+      const data = await res.json();
+
+      const user = JSON.parse(localStorage.getItem("user"));
+
+      if (data.length) {
+        document.getElementById("surplusTable").innerHTML = data.map(r => {
+          const badgeClass = r.status === "Available" ? "badge-green" : r.status === "Requested" ? "badge-yellow" : "badge-blue";
+          const actionBtn  = r.status === "Available"
+            ? `<button class="btn btn-outline" style="padding:6px 12px;font-size:12px" onclick="openModal(${r.id})">Request</button>`
+            : r.status === "Requested" && (user.role === "Admin" || user.role === "Manager")
+            ? `<button class="btn btn-primary" style="padding:6px 12px;font-size:12px" onclick="markCollected(${r.id})">Mark Collected</button>`
+            : "—";
+          return `
+            <tr>
+              <td><strong>${r.item}</strong></td>
+              <td>${r.quantity} kg</td>
+              <td>${r.date}</td>
+              <td><span class="badge ${badgeClass}">${r.status}</span></td>
+              <td>${r.ngo_name || '—'}</td>
+              <td>${actionBtn}</td>
+            </tr>
+          `;
+        }).join("");
+      } else {
+        document.getElementById("surplusTable").innerHTML = '<tr><td colspan="6" style="text-align:center;color:#7a8c82;padding:20px">No surplus food listed</td></tr>';
+      }
+    } catch (e) {}
+  }
+
+  function openModal(id) {
+    selectedId = id;
+    const modal = document.getElementById("modal");
+    modal.style.display = "flex";
+  }
+  function closeModal() {
+    document.getElementById("modal").style.display = "none";
+    selectedId = null;
+  }
+
+  async function submitRequest() {
+    const ngoName = document.getElementById("ngoName").value.trim();
+    if (!ngoName) return alert("Enter NGO name");
+    try {
+      await fetch(`${API}/surplus/request/${selectedId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ngo_name: ngoName })
+      });
+      closeModal();
+      loadSurplus();
+    } catch (e) {}
+  }
+
+  async function markCollected(id) {
+    try {
+      await fetch(`${API}/surplus/status/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "Collected" })
+      });
+      loadSurplus();
+    } catch (e) {}
+  }
+
+  loadSurplus();
+</script>
+</body>
+</html>

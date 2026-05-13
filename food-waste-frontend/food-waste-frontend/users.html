@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FoodWise — Users</title>
+<link rel="stylesheet" href="shared.css"/>
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+
+<div class="main">
+  <div class="page-header">
+    <h1>User Management</h1>
+    <p>Manage system users and roles</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:380px 1fr;gap:28px;align-items:start">
+
+    <div class="card">
+      <div class="section-head"><h2>Add New User</h2></div>
+      <div id="alertBox" class="alert" style="display:none"></div>
+
+      <div class="form-field">
+        <label>Full Name</label>
+        <input type="text" id="name" placeholder="Full name"/>
+      </div>
+      <div class="form-field">
+        <label>Email</label>
+        <input type="email" id="email" placeholder="email@example.com"/>
+      </div>
+      <div class="form-field">
+        <label>Password</label>
+        <input type="password" id="password" placeholder="Password"/>
+      </div>
+      <div class="form-field">
+        <label>Role</label>
+        <select id="role">
+          <option value="">Select role...</option>
+          <option value="Admin">Admin</option>
+          <option value="Manager">Manager</option>
+          <option value="Staff">Staff</option>
+          <option value="NGO">NGO</option>
+        </select>
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="addUser()">Create User</button>
+    </div>
+
+    <div class="card">
+      <div class="section-head">
+        <h2>All Users</h2>
+        <button class="btn btn-outline" onclick="loadUsers()">Refresh</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Name</th><th>Email</th><th>Role</th><th>Created</th><th>Action</th></tr>
+        </thead>
+        <tbody id="usersTable">
+          <tr><td colspan="5" style="text-align:center;color:#7a8c82;padding:20px">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+  renderSidebar("users");
+
+  async function addUser() {
+    const name     = document.getElementById("name").value.trim();
+    const email    = document.getElementById("email").value.trim();
+    const password = document.getElementById("password").value.trim();
+    const role     = document.getElementById("role").value;
+
+    if (!name || !email || !password || !role) return showAlert("alertBox", "All fields required.", "error");
+
+    try {
+      const res  = await fetch(`${API}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, role })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert("alertBox", "User created successfully!", "success");
+        document.getElementById("name").value     = "";
+        document.getElementById("email").value    = "";
+        document.getElementById("password").value = "";
+        document.getElementById("role").value     = "";
+        loadUsers();
+      } else {
+        showAlert("alertBox", data.message, "error");
+      }
+    } catch (e) { showAlert("alertBox", "Server error.", "error"); }
+  }
+
+  async function deleteUser(id) {
+    if (!confirm("Delete this user?")) return;
+    try {
+      await fetch(`${API}/auth/users/${id}`, { method: "DELETE" });
+      loadUsers();
+    } catch (e) {}
+  }
+
+  async function loadUsers() {
+    try {
+      const res  = await fetch(`${API}/auth/users`);
+      const data = await res.json();
+      const roleColors = { Admin: "badge-red", Manager: "badge-blue", Staff: "badge-green", NGO: "badge-yellow" };
+      if (data.length) {
+        document.getElementById("usersTable").innerHTML = data.map(u => `
+          <tr>
+            <td><strong>${u.name}</strong></td>
+            <td>${u.email}</td>
+            <td><span class="badge ${roleColors[u.role] || 'badge-green'}">${u.role}</span></td>
+            <td>${u.created_at ? u.created_at.split("T")[0] : "—"}</td>
+            <td><button class="btn btn-danger" style="padding:6px 12px;font-size:12px" onclick="deleteUser(${u.id})">Delete</button></td>
+          </tr>
+        `).join("");
+      } else {
+        document.getElementById("usersTable").innerHTML = '<tr><td colspan="5" style="text-align:center;color:#7a8c82;padding:20px">No users found</td></tr>';
+      }
+    } catch (e) {}
+  }
+
+  loadUsers();
+</script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FoodWise — Food Entry</title>
+<link rel="stylesheet" href="shared.css"/>
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+
+<div class="main">
+  <div class="page-header">
+    <h1>Food Entry</h1>
+    <p>Record daily food preparation and consumption</p>
+  </div>
+
+  <div style="display:grid;grid-template-columns:400px 1fr;gap:28px;align-items:start">
+
+    <!-- Form -->
+    <div class="card">
+      <div class="section-head"><h2>Add Food Entry</h2></div>
+      <div id="alertBox" class="alert" style="display:none"></div>
+
+      <div class="form-field">
+        <label>Date</label>
+        <input type="date" id="date"/>
+      </div>
+      <div class="form-field">
+        <label>Food Item</label>
+        <input type="text" id="item" placeholder="e.g. Rice, Bread, Dal"/>
+      </div>
+      <div class="form-field">
+        <label>Quantity Prepared (kg)</label>
+        <input type="number" id="prepared" min="0" placeholder="0"/>
+      </div>
+      <div class="form-field">
+        <label>Quantity Consumed (kg)</label>
+        <input type="number" id="consumed" min="0" placeholder="0"/>
+      </div>
+
+      <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="addFood()">Save Entry</button>
+    </div>
+
+    <!-- Recent Entries -->
+    <div class="card">
+      <div class="section-head">
+        <h2>Recent Entries</h2>
+        <button class="btn btn-outline" onclick="loadFood()">Refresh</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Date</th><th>Item</th><th>Prepared</th><th>Consumed</th><th>Leftover</th></tr>
+        </thead>
+        <tbody id="foodTable">
+          <tr><td colspan="5" style="text-align:center;color:#7a8c82;padding:20px">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+  renderSidebar("food");
+
+  // Set today's date by default
+  document.getElementById("date").value = new Date().toISOString().split("T")[0];
+
+  async function addFood() {
+    const date     = document.getElementById("date").value;
+    const item     = document.getElementById("item").value.trim();
+    const prepared = document.getElementById("prepared").value;
+    const consumed = document.getElementById("consumed").value;
+
+    if (!date || !item || !prepared || !consumed) {
+      return showAlert("alertBox", "All fields are required.", "error");
+    }
+    if (parseInt(consumed) > parseInt(prepared)) {
+      return showAlert("alertBox", "Consumed cannot exceed prepared.", "error");
+    }
+
+    try {
+      const res  = await fetch(`${API}/food/add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date, item, prepared: parseInt(prepared), consumed: parseInt(consumed) })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert("alertBox", "Food entry saved successfully!", "success");
+        document.getElementById("item").value     = "";
+        document.getElementById("prepared").value = "";
+        document.getElementById("consumed").value = "";
+        loadFood();
+      } else {
+        showAlert("alertBox", data.message, "error");
+      }
+    } catch (e) {
+      showAlert("alertBox", "Server error.", "error");
+    }
+  }
+
+  async function loadFood() {
+    try {
+      const res  = await fetch(`${API}/food/all`);
+      const data = await res.json();
+      if (data.length) {
+        document.getElementById("foodTable").innerHTML = data.map(r => `
+          <tr>
+            <td>${r.date}</td>
+            <td><strong>${r.item}</strong></td>
+            <td>${r.prepared} kg</td>
+            <td>${r.consumed} kg</td>
+            <td><span class="badge ${(r.prepared - r.consumed) > 15 ? 'badge-red' : 'badge-green'}">${r.prepared - r.consumed} kg</span></td>
+          </tr>
+        `).join("");
+      } else {
+        document.getElementById("foodTable").innerHTML = '<tr><td colspan="5" style="text-align:center;color:#7a8c82;padding:20px">No entries yet</td></tr>';
+      }
+    } catch (e) {}
+  }
+
+  loadFood();
+</script>
+</body>
+</html>

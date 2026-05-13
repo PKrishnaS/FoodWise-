@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FoodWise — Dashboard</title>
+<link rel="stylesheet" href="shared.css"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+  .chart-box { position: relative; height: 240px; }
+  .alert-list { list-style: none; }
+  .alert-list li {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid #f0f4f1;
+    font-size: 14px;
+  }
+  .alert-list li:last-child { border-bottom: none; }
+  .alert-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); flex-shrink: 0; }
+  .alert-dot.ok { background: var(--green-lt); }
+  .no-data { color: #7a8c82; font-size: 14px; text-align: center; padding: 20px; }
+</style>
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+
+<div class="main">
+  <div class="page-header">
+    <h1>Dashboard</h1>
+    <p id="greeting">Good morning! Here's your food management overview.</p>
+  </div>
+
+  <!-- Stat Cards -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="label">Total Prepared</div>
+      <div class="value" id="statPrepared">—<span class="unit">kg</span></div>
+      <div class="icon-bg" style="background:#e8f5ee">🍽️</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Consumed</div>
+      <div class="value" id="statConsumed">—<span class="unit">kg</span></div>
+      <div class="icon-bg" style="background:#e8f0fe">✅</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Total Wasted</div>
+      <div class="value" id="statWasted">—<span class="unit">kg</span></div>
+      <div class="icon-bg" style="background:#fdecea">♻️</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Waste %</div>
+      <div class="value" id="statPct">—<span class="unit">%</span></div>
+      <div class="icon-bg" style="background:#fef6e4">📉</div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <!-- Monthly Trend Chart -->
+    <div class="card">
+      <div class="section-head">
+        <h2>Monthly Trend</h2>
+      </div>
+      <div class="chart-box">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Alerts -->
+    <div class="card">
+      <div class="section-head">
+        <h2>Waste Alerts</h2>
+        <span class="badge badge-red" id="alertCount">0 alerts</span>
+      </div>
+      <ul class="alert-list" id="alertList">
+        <li><div class="alert-dot ok"></div> No alerts — waste levels are normal</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Waste Summary Table -->
+  <div class="card">
+    <div class="section-head">
+      <h2>Waste Summary by Item</h2>
+      <a href="waste.html" class="btn btn-outline">Add Waste</a>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Food Item</th>
+          <th>Total Wasted (kg)</th>
+          <th>Entries</th>
+          <th>Last Recorded</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="wasteTable">
+        <tr><td colspan="5" class="no-data">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+  renderSidebar("dashboard");
+
+  const user = JSON.parse(localStorage.getItem("user"));
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  document.getElementById("greeting").textContent = `${greet}, ${user.name}! Here's your food management overview.`;
+
+  async function loadDashboard() {
+    try {
+      // Dashboard stats
+      const dashRes = await fetch(`${API}/report/dashboard`);
+      const dash = await dashRes.json();
+      document.getElementById("statPrepared").innerHTML = `${dash.total_prepared || 0}<span class="unit">kg</span>`;
+      document.getElementById("statConsumed").innerHTML = `${dash.total_consumed || 0}<span class="unit">kg</span>`;
+      document.getElementById("statWasted").innerHTML   = `${dash.total_wasted   || 0}<span class="unit">kg</span>`;
+      document.getElementById("statPct").innerHTML      = `${dash.waste_percentage || 0}<span class="unit">%</span>`;
+
+      // Monthly chart
+      const monthRes = await fetch(`${API}/report/monthly`);
+      const monthly  = await monthRes.json();
+      if (monthly.length) {
+        const labels   = monthly.map(r => r.month).reverse();
+        const prepared = monthly.map(r => r.prepared).reverse();
+        const wasted   = monthly.map(r => r.wasted).reverse();
+        new Chart(document.getElementById("trendChart"), {
+          type: "line",
+          data: {
+            labels,
+            datasets: [
+              { label: "Prepared", data: prepared, borderColor: "#25a862", backgroundColor: "rgba(37,168,98,0.1)", tension: 0.4, fill: true },
+              { label: "Wasted",   data: wasted,   borderColor: "#e05c3a", backgroundColor: "rgba(224,92,58,0.1)",  tension: 0.4, fill: true }
+            ]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } }
+        });
+      } else {
+        document.getElementById("trendChart").parentElement.innerHTML = '<p class="no-data">Add food data to see trends</p>';
+      }
+
+      // Alerts
+      const alertRes = await fetch(`${API}/report/alerts`);
+      const alertData = await alertRes.json();
+      if (alertData.alerts && alertData.alerts.length > 0) {
+        document.getElementById("alertCount").textContent = `${alertData.alerts.length} alerts`;
+        document.getElementById("alertList").innerHTML = alertData.alerts.map(a => `
+          <li>
+            <div class="alert-dot"></div>
+            <span><strong>${a.item}</strong> — ${a.waste_pct}% waste rate (${a.total_wasted}kg wasted)</span>
+          </li>
+        `).join("");
+      }
+
+      // Waste summary table
+      const wasteRes = await fetch(`${API}/waste/summary`);
+      const waste = await wasteRes.json();
+      if (waste.length) {
+        document.getElementById("wasteTable").innerHTML = waste.map(w => `
+          <tr>
+            <td><strong>${w.item}</strong></td>
+            <td>${w.total_wasted} kg</td>
+            <td>${w.entries}</td>
+            <td>${w.last_recorded}</td>
+            <td><span class="badge ${w.total_wasted > 30 ? 'badge-red' : 'badge-green'}">${w.total_wasted > 30 ? 'High' : 'Normal'}</span></td>
+          </tr>
+        `).join("");
+      } else {
+        document.getElementById("wasteTable").innerHTML = '<tr><td colspan="5" class="no-data">No waste data yet</td></tr>';
+      }
+
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  loadDashboard();
+</script>
+</body>
+</html>

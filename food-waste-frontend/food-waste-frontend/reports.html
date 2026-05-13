@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FoodWise — Reports</title>
+<link rel="stylesheet" href="shared.css"/>
+<style>
+  .report-card {
+    background: var(--white); border-radius: var(--card-r);
+    padding: 28px; box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    margin-bottom: 24px;
+  }
+  .print-btn { margin-left: auto; }
+  @media print {
+    .sidebar, .btn, .page-header p { display: none !important; }
+    .main { margin-left: 0 !important; }
+  }
+</style>
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+
+<div class="main">
+  <div class="page-header">
+    <h1>Reports</h1>
+    <p>Monthly summaries and export</p>
+  </div>
+
+  <!-- Summary -->
+  <div class="report-card" id="summarySection">
+    <div class="section-head">
+      <h2>Overall Summary</h2>
+      <button class="btn btn-primary print-btn" onclick="window.print()">🖨️ Print Report</button>
+    </div>
+    <div class="stats-grid" style="margin-top:16px;margin-bottom:0">
+      <div class="stat-card">
+        <div class="label">Total Prepared</div>
+        <div class="value" id="rPrepared">—<span class="unit">kg</span></div>
+        <div class="icon-bg" style="background:#e8f5ee">🍽️</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Consumed</div>
+        <div class="value" id="rConsumed">—<span class="unit">kg</span></div>
+        <div class="icon-bg" style="background:#e8f0fe">✅</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Total Wasted</div>
+        <div class="value" id="rWasted">—<span class="unit">kg</span></div>
+        <div class="icon-bg" style="background:#fdecea">♻️</div>
+      </div>
+      <div class="stat-card">
+        <div class="label">Waste Rate</div>
+        <div class="value" id="rPct">—<span class="unit">%</span></div>
+        <div class="icon-bg" style="background:#fef6e4">📉</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monthly Table -->
+  <div class="report-card">
+    <div class="section-head"><h2>Monthly Breakdown</h2></div>
+    <table>
+      <thead>
+        <tr><th>Month</th><th>Prepared (kg)</th><th>Consumed (kg)</th><th>Wasted (kg)</th><th>Efficiency</th><th>Status</th></tr>
+      </thead>
+      <tbody id="monthTable">
+        <tr><td colspan="6" style="text-align:center;color:#7a8c82;padding:20px">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Waste Alerts -->
+  <div class="report-card">
+    <div class="section-head">
+      <h2>High Waste Alerts</h2>
+      <span class="badge badge-red" id="alertBadge">Loading...</span>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Food Item</th><th>Total Prepared</th><th>Total Wasted</th><th>Waste %</th><th>Action Needed</th></tr>
+      </thead>
+      <tbody id="alertTable">
+        <tr><td colspan="5" style="text-align:center;color:#7a8c82;padding:20px">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+  renderSidebar("reports");
+
+  async function loadReports() {
+    try {
+      const [dashRes, monthRes, alertRes] = await Promise.all([
+        fetch(`${API}/report/dashboard`),
+        fetch(`${API}/report/monthly`),
+        fetch(`${API}/report/alerts`)
+      ]);
+      const dash  = await dashRes.json();
+      const monthly = await monthRes.json();
+      const alerts  = await alertRes.json();
+
+      // Summary
+      document.getElementById("rPrepared").innerHTML = `${dash.total_prepared || 0}<span class="unit">kg</span>`;
+      document.getElementById("rConsumed").innerHTML = `${dash.total_consumed || 0}<span class="unit">kg</span>`;
+      document.getElementById("rWasted").innerHTML   = `${dash.total_wasted   || 0}<span class="unit">kg</span>`;
+      document.getElementById("rPct").innerHTML      = `${dash.waste_percentage || 0}<span class="unit">%</span>`;
+
+      // Monthly
+      if (monthly.length) {
+        document.getElementById("monthTable").innerHTML = monthly.map(r => {
+          const eff = r.prepared > 0 ? Math.round((r.consumed / r.prepared) * 100) : 0;
+          return `
+            <tr>
+              <td><strong>${r.month}</strong></td>
+              <td>${r.prepared || 0}</td>
+              <td>${r.consumed || 0}</td>
+              <td>${r.wasted   || 0}</td>
+              <td>${eff}%</td>
+              <td><span class="badge ${eff >= 80 ? 'badge-green' : eff >= 60 ? 'badge-yellow' : 'badge-red'}">${eff >= 80 ? 'Good' : eff >= 60 ? 'Average' : 'Poor'}</span></td>
+            </tr>
+          `;
+        }).join("");
+      } else {
+        document.getElementById("monthTable").innerHTML = '<tr><td colspan="6" style="text-align:center;color:#7a8c82;padding:20px">No monthly data yet</td></tr>';
+      }
+
+      // Alerts
+      const alertList = alerts.alerts || [];
+      document.getElementById("alertBadge").textContent = `${alertList.length} items`;
+      if (alertList.length) {
+        document.getElementById("alertTable").innerHTML = alertList.map(a => `
+          <tr>
+            <td><strong>${a.item}</strong></td>
+            <td>${a.total_prepared} kg</td>
+            <td>${a.total_wasted} kg</td>
+            <td><span class="badge badge-red">${a.waste_pct}%</span></td>
+            <td>Reduce preparation by ~${Math.round(a.total_wasted * 0.8)} kg</td>
+          </tr>
+        `).join("");
+      } else {
+        document.getElementById("alertTable").innerHTML = '<tr><td colspan="5" style="text-align:center;color:#7a8c82;padding:20px">✅ No high waste items detected</td></tr>';
+        document.getElementById("alertBadge").className = "badge badge-green";
+        document.getElementById("alertBadge").textContent = "All clear";
+      }
+
+    } catch (e) { console.error(e); }
+  }
+
+  loadReports();
+</script>
+</body>
+</html>

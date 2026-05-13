@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FoodWise — Analysis</title>
+<link rel="stylesheet" href="shared.css"/>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  .chart-box { height: 280px; position: relative; }
+</style>
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+
+<div class="main">
+  <div class="page-header">
+    <h1>Waste Analysis</h1>
+    <p>Visual breakdown of food waste patterns and trends</p>
+  </div>
+
+  <div class="charts-grid">
+    <div class="card">
+      <div class="section-head"><h2>Monthly Overview</h2></div>
+      <div class="chart-box"><canvas id="barChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="section-head"><h2>Waste by Item</h2></div>
+      <div class="chart-box"><canvas id="pieChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="section-head">
+      <h2>Monthly Detailed Report</h2>
+    </div>
+    <table>
+      <thead>
+        <tr><th>Month</th><th>Prepared</th><th>Consumed</th><th>Wasted</th><th>Efficiency</th></tr>
+      </thead>
+      <tbody id="monthTable">
+        <tr><td colspan="5" style="text-align:center;color:#7a8c82;padding:20px">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+  renderSidebar("analysis");
+
+  async function loadAnalysis() {
+    try {
+      const [monthRes, wasteRes] = await Promise.all([
+        fetch(`${API}/report/monthly`),
+        fetch(`${API}/waste/summary`)
+      ]);
+      const monthly = await monthRes.json();
+      const waste   = await wasteRes.json();
+
+      // Bar chart - monthly
+      if (monthly.length) {
+        const labels   = monthly.map(r => r.month).reverse();
+        const prepared = monthly.map(r => r.prepared  || 0).reverse();
+        const consumed = monthly.map(r => r.consumed  || 0).reverse();
+        const wasted   = monthly.map(r => r.wasted    || 0).reverse();
+
+        new Chart(document.getElementById("barChart"), {
+          type: "bar",
+          data: {
+            labels,
+            datasets: [
+              { label: "Prepared", data: prepared, backgroundColor: "rgba(37,168,98,0.7)"  },
+              { label: "Consumed", data: consumed, backgroundColor: "rgba(26,86,219,0.7)"  },
+              { label: "Wasted",   data: wasted,   backgroundColor: "rgba(224,92,58,0.7)"  }
+            ]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: "bottom" } },
+            scales: { x: { stacked: false }, y: { beginAtZero: true } }
+          }
+        });
+
+        // Table
+        document.getElementById("monthTable").innerHTML = monthly.map(r => {
+          const eff = r.prepared > 0 ? Math.round((r.consumed / r.prepared) * 100) : 0;
+          return `
+            <tr>
+              <td>${r.month}</td>
+              <td>${r.prepared || 0} kg</td>
+              <td>${r.consumed || 0} kg</td>
+              <td>${r.wasted   || 0} kg</td>
+              <td><span class="badge ${eff >= 80 ? 'badge-green' : eff >= 60 ? 'badge-yellow' : 'badge-red'}">${eff}%</span></td>
+            </tr>
+          `;
+        }).join("");
+      } else {
+        document.getElementById("barChart").parentElement.innerHTML = '<p style="text-align:center;color:#7a8c82;padding:40px">No data yet</p>';
+        document.getElementById("monthTable").innerHTML = '<tr><td colspan="5" style="text-align:center;color:#7a8c82;padding:20px">No monthly data yet</td></tr>';
+      }
+
+      // Pie chart - waste by item
+      if (waste.length) {
+        const colors = ["#25a862","#e05c3a","#1a56b0","#b07d1a","#8b5cf6","#ec4899"];
+        new Chart(document.getElementById("pieChart"), {
+          type: "doughnut",
+          data: {
+            labels: waste.map(w => w.item),
+            datasets: [{ data: waste.map(w => w.total_wasted), backgroundColor: colors }]
+          },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { position: "bottom" } }
+          }
+        });
+      } else {
+        document.getElementById("pieChart").parentElement.innerHTML = '<p style="text-align:center;color:#7a8c82;padding:40px">No waste data yet</p>';
+      }
+
+    } catch (e) { console.error(e); }
+  }
+
+  loadAnalysis();
+</script>
+</body>
+</html>

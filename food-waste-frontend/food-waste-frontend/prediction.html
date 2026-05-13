@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FoodWise — Prediction</title>
+<link rel="stylesheet" href="shared.css"/>
+<style>
+  .predict-card {
+    background: linear-gradient(135deg, #0f2d1a, #1a4a28);
+    border-radius: 20px;
+    padding: 40px;
+    color: var(--cream);
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .predict-card h2 { font-family: 'Syne', sans-serif; font-size: 18px; margin-bottom: 8px; color: rgba(247,243,237,0.6); }
+  .predict-num { font-family: 'Syne', sans-serif; font-size: 72px; font-weight: 800; color: #25a862; line-height: 1; margin: 16px 0; }
+  .predict-unit { font-size: 20px; color: rgba(247,243,237,0.6); }
+  .predict-rec { margin-top: 20px; background: rgba(255,255,255,0.08); border-radius: 12px; padding: 14px 20px; font-size: 15px; color: rgba(247,243,237,0.8); }
+
+  .meta-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; margin-bottom: 28px; }
+  .meta-card { background: #fff; border-radius: 14px; padding: 20px; text-align: center; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .meta-card .m-val { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 700; color: var(--dark); }
+  .meta-card .m-label { font-size: 12px; color: #7a8c82; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .item-search { display: flex; gap: 12px; margin-bottom: 20px; }
+  .item-search input { flex: 1; padding: 12px 16px; border: 1.5px solid #d9e8de; border-radius: 10px; font-family: 'DM Sans', sans-serif; font-size: 14px; outline: none; }
+  .item-search input:focus { border-color: var(--green-lt); }
+</style>
+</head>
+<body>
+<div id="sidebar" class="sidebar"></div>
+
+<div class="main">
+  <div class="page-header">
+    <h1>Demand Prediction</h1>
+    <p>AI-based food demand forecasting using historical data</p>
+  </div>
+
+  <!-- Overall Prediction -->
+  <div class="predict-card">
+    <h2>Overall Recommended Preparation</h2>
+    <div class="predict-num" id="predictNum">—</div>
+    <div class="predict-unit">kg for tomorrow</div>
+    <div class="predict-rec" id="predictRec">Loading prediction...</div>
+  </div>
+
+  <!-- Meta stats -->
+  <div class="meta-grid">
+    <div class="meta-card">
+      <div class="m-val" id="metaPrepared">—</div>
+      <div class="m-label">Avg Prepared / Day</div>
+    </div>
+    <div class="meta-card">
+      <div class="m-val" id="metaConsumed">—</div>
+      <div class="m-label">Avg Consumed / Day</div>
+    </div>
+    <div class="meta-card">
+      <div class="m-val" id="metaLeftover">—</div>
+      <div class="m-label">Avg Leftover / Day</div>
+    </div>
+  </div>
+
+  <!-- Item-specific prediction -->
+  <div class="card">
+    <div class="section-head"><h2>Predict by Food Item</h2></div>
+    <div class="item-search">
+      <input type="text" id="itemInput" placeholder="Enter food item name (e.g. Rice)"/>
+      <button class="btn btn-primary" onclick="predictItem()">Predict</button>
+    </div>
+    <div id="itemResult" style="display:none" class="predict-rec" style="margin-top:0">
+    </div>
+  </div>
+</div>
+
+<script src="shared.js"></script>
+<script>
+  renderSidebar("prediction");
+
+  async function loadPrediction() {
+    try {
+      const res  = await fetch(`${API}/prediction`);
+      const data = await res.json();
+      document.getElementById("predictNum").textContent  = data.predicted_quantity || 0;
+      document.getElementById("predictRec").textContent  = data.recommendation || "";
+      document.getElementById("metaPrepared").textContent = (data.avg_prepared || 0) + " kg";
+      document.getElementById("metaConsumed").textContent = (data.avg_consumed || 0) + " kg";
+      document.getElementById("metaLeftover").textContent = (data.avg_leftover || 0) + " kg";
+    } catch (e) {
+      document.getElementById("predictRec").textContent = "Add food entries to generate predictions.";
+    }
+  }
+
+  async function predictItem() {
+    const item = document.getElementById("itemInput").value.trim();
+    if (!item) return;
+    try {
+      const res  = await fetch(`${API}/prediction/${encodeURIComponent(item)}`);
+      const data = await res.json();
+      const el   = document.getElementById("itemResult");
+      el.style.display = "block";
+      el.innerHTML = `
+        <strong>${data.item}</strong> — Recommended preparation: 
+        <strong style="color:var(--green-lt);font-size:18px">${data.predicted_quantity} kg</strong>
+        &nbsp;(based on avg consumption of ${data.avg_consumed} kg/day)
+      `;
+    } catch (e) {}
+  }
+
+  document.getElementById("itemInput").addEventListener("keydown", e => {
+    if (e.key === "Enter") predictItem();
+  });
+
+  loadPrediction();
+</script>
+</body>
+</html>
